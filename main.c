@@ -2,6 +2,7 @@
 #include <ncurses.h>
 #include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
 
 typedef struct { 
     int id;
@@ -14,74 +15,50 @@ typedef struct {
 } NoteGroup;
 
 void noteEdit (WINDOW *window, Note note, char *textBuffer) {
-    //load to buffer
-    //display buffer
-    //move cursor sa dulo ng text
-    //get input
-        //buffer + input
-        //display buffer / addch
-        //move cursor
-
-    //REMAKE THE ENTIRE FUCKING "TEXTBOX"
-    char linedTextBuffer[512][1024];
-    int j = 0;
-    int k = 1;
-    int l = 0;
-    int m = 0;
+    char linedTextBuffer[1024][1024];
     int ch;
-    for(int i = 0; i < strlen(note.data); i++) {
-        textBuffer[i] = note.data[i];
-        l++;
-        j++;
-    } 
-    textBuffer[l] = '\0';
-    box(window, 0, 0);
-    mvwprintw(window, 1, 1, "%s", textBuffer);
+    int textLen = 0;
+
+    strcpy(textBuffer, note.data);
+    textLen = strlen(textBuffer);
+
     keypad(window, true);
 
     while((ch = wgetch(window)) != 27) {
-        werase(window);
-        box(window, 0, 0);
-
-        memset(linedTextBuffer, 0, sizeof(linedTextBuffer));
-
         if(ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
-            j--;
-            l--;
-            if(l > 0) { textBuffer[l] = '\0'; }
-            //wmove(window, k, j); 
-        } else if((ch == KEY_ENTER || ch == '\n')) {
-            textBuffer[j] = '\n';
-            k++;
-            j = 1;
-            //wmove(window, k, j); 
-        } else {  
-            textBuffer[l] = (char)ch;
-            j++;
-            l++;
-            if(l > 0) { textBuffer[l] = '\0'; }
-            //wmove(window, k, j); 
+            if(textLen > 0) {
+                textLen--;
+                textBuffer[textLen] = '\0';
+            }
+        } else if(ch == '\n' || ch == KEY_ENTER) {
+            textBuffer[textLen++] = '\n';
+            textBuffer[textLen] = '\0';
+        } else if(isprint(ch)) {
+            textBuffer[textLen++] = (char)ch;
+            textBuffer[textLen] = '\0';
         }
-
-        // read every character until '\n'
-        // store 
 
         int n = 0;
         int o = 0;
-        for(int i = 0; i < strlen(textBuffer); i++) {
+        for(int i = 0; i < textLen; i++) {
             if(textBuffer[i] == '\n') {
                 linedTextBuffer[n][o] = '\0';
-                o = 0;
                 n++;
+                o = 0;
             } else {
-                linedTextBuffer[n][o] = textBuffer[i];
-                o++;
+                linedTextBuffer[n][o++] = textBuffer[i];
             }
         } linedTextBuffer[n][o] = '\0';
 
+        werase(window);
+        box(window, 0, 0);
+
         for(int i = 0; i <= n; i++) {
             mvwprintw(window, 1 + i, 1, "%s", linedTextBuffer[i]);
-        } wmove(window, n + 1, o + 1);
+        }
+
+        wmove(window, n + 1, o + 1);
+        wrefresh(window);
     }
 
     keypad(window, false);
