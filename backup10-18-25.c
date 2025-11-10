@@ -6,7 +6,7 @@
 #include <ctype.h>
 
 void placeholderVoid () {
-  
+
 }
 
 typedef struct {
@@ -16,7 +16,7 @@ typedef struct {
 
 typedef struct TodoItem {
   bool completed;
-  char *name;
+  char *title;
   char *description;
   struct TodoItem *next;
 } TodoItem;
@@ -42,49 +42,44 @@ typedef enum {
 } todoMode;
 
 TodoItem *createTodo(char *_title) {
-  char* newStr = (char*)malloc(strlen(_title) * 2);
-  strcpy(newStr, _title);
-  TodoItem* newTodo = (TodoItem*)malloc(sizeof(TodoItem));
+  TodoItem *newTodo = (TodoItem*)malloc(sizeof(TodoItem));
   newTodo->completed = false;
-  newTodo->name = newStr;
+  newTodo->title = _title;
   newTodo->description = NULL;
   newTodo->next = NULL;
   return newTodo;
 }
 
-void addTodo(char* _title, TodoGroup** group) {
-  char *new_title = _title;
-  TodoItem *newItem = createTodo(new_title);
-  if((*group)->todoHead == NULL) {
-    (*group)->todoHead = newItem;
+void addTodo(TodoGroup *group, char *_title) {
+  TodoItem *newItem = createTodo(_title);
+  if(group->todoHead == NULL) {
+    group->todoHead = newItem;
     return;
-  }  
-  TodoItem *temp = (*group)->todoHead;
+  } 
+  
+  TodoItem *temp = group->todoHead;
   while(temp->next != NULL) {
     temp = temp->next;
-  } 
-  temp->next = newItem;
+  } temp->next = newItem;
 }
 
 TodoGroup* createTodoGroup(char *_name) {
-  char* newStr = (char*)malloc(strlen(_name) * 2);
-  strcpy(newStr, _name);
   TodoGroup *newGroup = (TodoGroup*)malloc(sizeof(TodoGroup));
-  newGroup->name = newStr;
+  newGroup->name = _name;
   newGroup->todoHead = NULL;
   newGroup->nextGroup = NULL;
   newGroup->collapsed = false;
   return newGroup;
 }
 
-void addGroup(char* _name, TodoPage** page) {
+void addGroup(char* _name, TodoPage* page) {
   TodoGroup* newGroup = createTodoGroup(_name);
-  if((*page)->groupHead == NULL) {
-    (*page)->groupHead = newGroup;
+  if(page->groupHead == NULL) {
+    page->groupHead = newGroup;
     return;
   }
 
-  TodoGroup* temp = (*page)->groupHead;
+  TodoGroup* temp = page->groupHead;
   while(temp->nextGroup != NULL) {
     temp = temp->nextGroup;
   } temp->nextGroup = newGroup;
@@ -98,96 +93,9 @@ TodoPage* createPage(char* _name) {
   return newPage;
 }
 
-void addPage(char* _name, TodoPage** head) {
+void addPage(char* _name) {
   TodoPage* newPage = createPage(_name);
-  addGroup(newPage->name, &newPage); 
-
-  if(*head == NULL) {
-    *head = newPage;
-  } else {
-    TodoPage* temp = *head;
-    while(temp->nextPage != NULL) {
-      temp = temp->nextPage;
-    }
-    temp->nextPage = newPage;
-  }
-}
-
-void displayPage(WINDOW* mainWindow, TodoPage* page, TodoGroup** selectedGroup, TodoItem** selectedItem, int* _highlight, todoMode mode, int* _a) {
-  int printY = 0;
-  int a = *_a;
-  a = 0;
-  int highlight = *_highlight;
-
-  TodoGroup* currentGroup = NULL;
-    if(page != NULL){ currentGroup = page->groupHead; }
-    while(currentGroup != NULL) {
-      if(printY == highlight) {
-        if(mode == TODO) {
-          wattron(mainWindow, A_BOLD);
-          wattron(mainWindow, A_STANDOUT);
-          if(currentGroup->collapsed == false) {
-            mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name); 
-          } else if(!currentGroup->collapsed) {
-            mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
-          }
-          wattroff(mainWindow, A_BOLD);
-          wattroff(mainWindow, A_STANDOUT);
-          *selectedGroup = currentGroup;
-          *selectedItem = NULL;
-        }
-        else {
-          wattron(mainWindow, A_BOLD);
-          wattron(mainWindow, A_UNDERLINE);
-          if(currentGroup->collapsed == false) {
-            mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name);
-          } else {
-            mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
-          }
-          wattroff(mainWindow, A_BOLD);
-          wattroff(mainWindow, A_UNDERLINE);
-        } 
-      }
-      else {
-        wattron(mainWindow, A_BOLD);
-        if(currentGroup->collapsed == false) {
-          mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name);
-        } else {
-          mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
-        }
-        wattroff(mainWindow, A_BOLD); 
-      } 
-      printY++;
-      a++;
-     
-      TodoItem *tempItem;
-      if(currentGroup != NULL){ tempItem = currentGroup->todoHead; }
-      while(tempItem != NULL) {
-        if (printY == highlight && tempItem->completed == false) {
-          if(mode != TODO) {
-            wattron(mainWindow, A_UNDERLINE);
-            mvwprintw(mainWindow, 1 + printY, 1, "[ ] %s", tempItem->name);
-            wattroff(mainWindow, A_UNDERLINE);
-          } 
-          else {
-            wattron(mainWindow, A_STANDOUT);
-            mvwprintw(mainWindow, 1 + printY, 1, "[ ] %s", tempItem->name);
-            wattroff(mainWindow, A_STANDOUT);
-          }
-          *selectedItem = tempItem;
-          *selectedGroup = currentGroup;
-        }
-        else {
-          mvwprintw(mainWindow, 1 + printY, 1, "[ ] %s", tempItem->name);
-        }
-        printY++;
-        a++;
-        tempItem = tempItem->next;    
-      }
-      currentGroup = currentGroup->nextGroup;
-    }
-
-  *_a = a;
+  addGroup(newPage->name, newPage); 
 }
 
 void TodoApp() {
@@ -230,22 +138,14 @@ void TodoApp() {
   TodoPage* selectedPage = NULL; 
   TodoPage* headPage = NULL;
 
-  TodoGroup* selectedGroup = NULL;
-  TodoItem* selectedItem = NULL;
-
-  addPage("COCK", &headPage);
-
-  if(headPage != NULL) {
-    selectedPage = headPage;
-  }
-
   int highlight = 0;
   int input = 0;
   int a = 0;
-  char addBuffer[256];
+  char addBuffer[128];
 
   keypad(mainWindow, true);
   top_panel(panel1);
+
   doupdate();
 
   // MAIN TODO LOOP
@@ -253,20 +153,74 @@ void TodoApp() {
     // GRAPHICS
     werase(mainWindow);
     box(mainWindow, 0, 0);
-    // DEBUG
-    if (selectedItem != NULL && selectedGroup != NULL) {
-      mvwprintw(mainWindow, 25, 10, "%s : %s", selectedGroup->name, selectedItem->name); 
-    }
-    else { mvwprintw(mainWindow, 25, 10, "%s", "(No item selected.)"); }
-
     if(selectedPage != NULL) {
       char* titleDisplay = selectedPage->name;
       mvwprintw(mainWindow, 0, 1, "%s", titleDisplay);
     }
     
-    // RENDER TODOLIST (page) 
-    displayPage(mainWindow, selectedPage, &selectedGroup, &selectedItem, &highlight, mode, &a);
+    // RENDER TODOLIST
+    int printY = 0;
+    a = 0;
     
+    TodoGroup* currentGroup = NULL;
+    if(selectedPage != NULL){ currentGroup = selectedPage->groupHead; }
+    while(currentGroup != NULL) {
+      if(printY == highlight && mode == TODO) {
+        wattron(mainWindow, A_BOLD);
+        wattron(mainWindow, A_STANDOUT);
+        if(currentGroup->collapsed == false) {
+          mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name); 
+        } else if(!currentGroup->collapsed) {
+          mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
+        }
+        wattroff(mainWindow, A_BOLD);
+        wattroff(mainWindow, A_STANDOUT);
+      } 
+      else if(printY == highlight && mode != TODO) {
+        wattron(mainWindow, A_BOLD);
+        wattron(mainWindow, A_UNDERLINE);
+        if(currentGroup->collapsed == false) {
+          mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name);
+        } else {
+          mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
+        }
+        wattroff(mainWindow, A_BOLD);
+        wattroff(mainWindow, A_UNDERLINE);
+      } 
+      else {
+        wattron(mainWindow, A_BOLD);
+        if(currentGroup->collapsed == false) {
+          mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name);
+        } else {
+          mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
+        }
+        wattroff(mainWindow, A_BOLD); 
+      } 
+      printY++;
+      a++;
+     
+      TodoItem *tempItem;
+      if(currentGroup != NULL){ tempItem = currentGroup->todoHead; }
+      while(tempItem != NULL) {
+        if(printY == highlight && tempItem->completed == false) {
+          wattron(mainWindow, A_STANDOUT);
+          mvwprintw(mainWindow, 1 + printY, 5, "%s", tempItem->title);
+          wattroff(mainWindow, A_STANDOUT);
+        } 
+        else if (printY == highlight && tempItem->completed == false && mode != TODO) {
+          wattron(mainWindow, A_UNDERLINE);
+          mvwprintw(mainWindow, 1 + printY, 5, "%s", tempItem->title);
+          wattron(mainWindow, A_UNDERLINE);
+        }
+        else {
+          mvwprintw(mainWindow, 1 + printY, 5, "%s", tempItem->title); 
+        }
+        printY++;
+        a++;
+        tempItem = tempItem->next;    
+      }
+      currentGroup = currentGroup->nextGroup;
+    }
     update_panels();
     doupdate(); 
 
@@ -274,17 +228,11 @@ void TodoApp() {
     if (mode == TODO) { input = wgetch(mainWindow); }
     if(mode == TODO) {
       switch(input) {
-        case 'A':
         case 'a':
           mode = ADD;
-          break;
-        case 'K':
-        case 'k':
         case KEY_UP:
           if(highlight <= 0) { highlight = a - 1; } else { highlight--; }
           break;
-        case 'J':
-        case 'j':
         case KEY_DOWN:
           if(highlight >= a - 1) { highlight = 0; } else { highlight++; }
           break;
@@ -317,16 +265,16 @@ void TodoApp() {
         addBuffer[i] = '\0';
       }
 
-      while(input = wgetch(subWin1)) {
+      while((input = wgetch(subWin1))) {
         if(!a) {
-          if(input == 'i' || input == 'I' || input == '1') {
+          if(input == 'i' || input == '1') {
             strcpy(adding, "Item");
             werase(subWin1);
             a = true;
             input = 0;
             goto addingit;
           } 
-          else if(input == 'g' || input == 'G' || input == '2') {
+          else if(input == 'g' || input == '2') {
             strcpy(adding, "Group");
             werase(subWin1);
             a = true;
@@ -366,7 +314,6 @@ void TodoApp() {
             wmove(subWin1, 1, aCurX);
             addBuffer[aCurX] = '\0';
             mvwhline(subWin1, 1, 2, ' ', maxX - 4);
-            mvwprintw(mainWindow, 10, 23, "haha tite");
           } 
           else if(input == 27) {
             werase(subWin1);
@@ -375,32 +322,16 @@ void TodoApp() {
             mode = TODO;
             break;
           } 
-          else if((input == 10 || input == '\n' || input == 343 || input == KEY_ENTER)) {
-            mvwprintw(mainWindow, 10, 23, "haha tite");
-            if(strcmp(adding, "Item") == 0) {
-              if(selectedGroup == NULL) {
-                addTodo(addBuffer, &selectedPage->groupHead);
-              }
-              else {
-                addTodo(addBuffer, &selectedGroup);
-              }
-              bottom_panel(panel2);
-              mode = TODO;
-              memset(addBuffer, 0, sizeof(addBuffer));
-              goto exitAdd;
+          else if(input == 343 && strlen(addBuffer) > 0) {
+            if(adding == "Item") {
             } 
-            else if(strcmp(adding, "Group") == 0) {
-              addGroup(addBuffer, &selectedPage);
-              bottom_panel(panel2);
-              mode = TODO;
-              memset(addBuffer, 0, sizeof(addBuffer));
-              goto exitAdd;
+            else if(adding == "Group") {
+
             }
           }
           mvwprintw(subWin1, 1, 2, "%s", addBuffer);
         }
       }
-      exitAdd:
       werase(subWin1);
       curs_set(false);
       keypad(subWin1, FALSE);
@@ -412,9 +343,8 @@ void TodoApp() {
         running = false;
       }
     } 
-  }
-} 
-
+}
+}
 void highlightWindow(WINDOW* win) {
   init_pair(1, COLOR_RED, -1);
 
