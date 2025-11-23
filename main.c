@@ -7,7 +7,8 @@
 #include <locale.h>
 #include "cJSON.h"
 
-// LAST COMMIT: 11-10-25
+// LAST COMMIT: 11-22-2025
+// 11-10-2025
 
 void placeholderVoid () {
   
@@ -253,12 +254,12 @@ void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* p
           if (printY == highlight && tempItem->completed == false) {
             if(mode != TODO) {
               wattron(mainWindow, A_UNDERLINE);
-              mvwprintw(mainWindow, 1 + printY, 1, "[ ] %s", tempItem->name);
+              mvwprintw(mainWindow, 1 + printY, 1, "  [ ] %s", tempItem->name);
               wattroff(mainWindow, A_UNDERLINE);
             }
             else {
               wattron(mainWindow, A_STANDOUT);
-              mvwprintw(mainWindow, 1 + printY, 1, "[ ] %s", tempItem->name);
+              mvwprintw(mainWindow, 1 + printY, 1, "  [ ] %s", tempItem->name);
               wattroff(mainWindow, A_STANDOUT);
             }
             *selectedItem = tempItem;
@@ -269,15 +270,15 @@ void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* p
             if(bY > 3) { bY -= 3; } // CEILING
             else if(printY >= maxY - 7) { bY -= (printY - maxY); } // FLOOR
             move_panel(_panel2, bY, bX);
-            //mvwprintw(mainWindow, 25, 2, "DEBUG: (printY + 2, strlen(tempItem->name) + 5) -> (%d,%d)", bY, bX);
+            move_panel(_panel3, bY, bX);
           }
           else if(printY == highlight && tempItem->completed) {
             wattron(mainWindow, A_STANDOUT);
             wattron(mainWindow, COLOR_PAIR(2));
-            mvwprintw(mainWindow, 1 + printY, 1, "[X] ");
+            mvwprintw(mainWindow, 1 + printY, 1, "  [X] ");
             char *c_str = tempItem->name;
             for(int i = 0; c_str[i] != '\0'; i++) {
-              mvwprintw(mainWindow, 1 + printY, i + 5, "%c\u0336", c_str[i]); 
+              mvwprintw(mainWindow, 1 + printY, i + 7, "%c\u0336", c_str[i]); 
             }
             wattroff(mainWindow, A_STANDOUT);
             wattroff(mainWindow, COLOR_PAIR(2));
@@ -294,16 +295,16 @@ void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* p
           else {
             if(tempItem->completed == true) {
               wattron(mainWindow, COLOR_PAIR(2));
-              mvwprintw(mainWindow, 1 + printY, 1, "[X]"); 
+              mvwprintw(mainWindow, 1 + printY, 1, "  [X]"); 
               char *c_str = tempItem->name;
               for(int i = 0; c_str[i] != '\0'; i++) {
-                mvwprintw(mainWindow, 1 + printY, i + 5, "%c\u0336", c_str[i]); 
+                mvwprintw(mainWindow, 1 + printY, i + 7, "%c\u0336", c_str[i]); 
               }
               wattroff(mainWindow, COLOR_PAIR(2));
               //mvwprintw(mainWindow, 25, 2,"DEBUG: Did it run?[eee]");
             }
             else {
-              mvwprintw(mainWindow, 1 + printY, 1, "[ ] %s", tempItem->name);
+              mvwprintw(mainWindow, 1 + printY, 1, "  [ ] %s", tempItem->name);
             }
           }
           printY++;
@@ -413,7 +414,7 @@ char* textBox(WINDOW *_mainWindow, WINDOW **_subWin, PANEL **_panel, int boxLeng
 void readTodoList(TodoPage** head) {
     if (!head) return;
 
-    FILE *todoDataFile = fopen("data.txt", "r");
+    FILE *todoDataFile = fopen("/home/user23565/.config/ballsonfire/data.txt", "r");
     if (!todoDataFile) return; // file missing, nothing to load
 
     fseek(todoDataFile, 0, SEEK_END);
@@ -496,7 +497,7 @@ void readTodoList(TodoPage** head) {
 }
 
 void writeTodoList(TodoPage* headPage) { // Write Page
-  FILE *todoDataFile = fopen("data.txt", "wb");
+  FILE *todoDataFile = fopen("/home/user23565/.config/ballsonfire/data.txt", "wb");
   
   TodoPage *currentPage; 
   TodoGroup *currentGroup;
@@ -572,7 +573,7 @@ void TodoApp() {
   PANEL *glPanel; // use for initTempPopup() and endTempPopup()
   PANEL *panel1 = new_panel(subWin1); // bottom menu
   PANEL *panel2 = new_panel(subWin2); // interact with todo menu 
-  PANEL *panel3 = new_panel(subWin3); // are you sure you want to delete group?
+  PANEL *panel3 = new_panel(subWin3); // are you sure you want to delete group/item?
 
   todoMode mode = TODO; // 0 - MenuMode : 1 - TodoList Mode
   
@@ -702,15 +703,20 @@ void TodoApp() {
           }
           break;
         case 'd': // DELETE GROUPING (not yet individual items)
-          if(selectedGroup != NULL && selectedItem == NULL) {
+          if(selectedGroup != NULL) {
             initPopup(mainWindow, subWin3, panel3, 5, 56);
             
             mvwprintw(subWin3, 1, 1, "Are you sure you want to delete this item/group?");
             mvwprintw(subWin3, 2, 1, "(All other elements below this group will be deleted)");
             int a_input = wgetch(subWin3);
             if(a_input == KEY_ENTER || a_input == 10) {
-              deleteTodoGroup(selectedGroup, &selectedPage);
-              selectedGroup = NULL;
+              if(selectedItem == NULL ) {
+                deleteTodoGroup(selectedGroup, &selectedPage);
+                selectedGroup = NULL;
+              } 
+              else {
+                deleteTodo(selectedItem, &selectedGroup);
+              } 
             }
 
             endPopup(mainWindow, subWin3, panel3);
@@ -719,8 +725,17 @@ void TodoApp() {
         case 's':
         case 'S':
           writeTodoList(selectedPage);
+          initTempPopup(mainWindow, &glSubWin, &glPanel, 3, 40, 1, maxX - 41);
+          mvwprintw(glSubWin, 1, 1, "✔ Data Saved...");
+          wgetch(glSubWin);
+          endTempPopup(mainWindow, &glSubWin, &glPanel);
           break;
-    
+        case 'm':
+        case 'M':
+          if(selectedItem != NULL) { selectedItem->completed = !selectedItem->completed; }
+        case 'r':
+        case 'R':
+          break;
       }
     }
     else if(mode == ADD) {
@@ -930,6 +945,7 @@ int main() {
   noecho();
   cbreak();
   curs_set(false);
+  ESCDELAY = 25;
 
   MainMenu();
 
