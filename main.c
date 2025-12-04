@@ -10,6 +10,17 @@
 // LAST COMMIT: 11-22-2025
 // 11-10-2025
 
+/*
+ 
+v0.3 
+  - Refactored code
+v0.2 
+ - Smooth esc
+ - Popup when saving
+ - Binded item delted to 'd'
+ - Mark/Unmark as complete with 'm'
+*/
+
 void placeholderVoid () {
   
 }
@@ -29,14 +40,16 @@ typedef struct TodoItem {
 typedef struct TodoGroup {
   char *name;
   TodoItem *todoHead;
+  TodoItem *todoTail;
   struct TodoGroup *nextGroup;
   bool collapsed;
 } TodoGroup;
 
-typedef struct TodoPage{
+typedef struct TodoPage {
   char *name;
   struct TodoPage *nextPage;
   TodoGroup *groupHead;
+  TodoGroup *groupTail;
 } TodoPage;
 
 typedef enum {
@@ -44,6 +57,7 @@ typedef enum {
   MENU,
   ADD,
   PAGE_SELECT,
+  MOVE,
 } todoMode;
 
 TodoItem *createTodo(char *_title, bool _completed, char* _description) {
@@ -60,15 +74,17 @@ TodoItem *createTodo(char *_title, bool _completed, char* _description) {
 void addTodo(TodoGroup** group, char* _title, bool _completed, char* _description) {
   char *new_title = _title;
   TodoItem *newItem = createTodo(new_title, _completed, _description);
-  if((*group)->todoHead == NULL) {
-    (*group)->todoHead = newItem;
+  TodoGroup *_group = *group;
+  if(_group->todoHead == NULL) {
+    _group->todoHead = newItem;
+    _group->todoTail = newItem;
     return;
-  }  
-  TodoItem *temp = (*group)->todoHead;
-  while(temp->next != NULL) { 
-    temp = temp->next;
-  } 
-  temp->next = newItem;
+  }
+  
+  if(_group->todoTail != NULL) {
+    _group->todoTail->next = newItem;
+    _group->todoTail = _group->todoTail->next;
+  }
 }
 
 void deleteTodo(TodoItem *todoDel, TodoGroup** group) {
@@ -103,6 +119,7 @@ TodoGroup* createTodoGroup(char *_name) {
   TodoGroup *newGroup = (TodoGroup*)malloc(sizeof(TodoGroup));
   newGroup->name = newStr;
   newGroup->todoHead = NULL;
+  newGroup->todoTail = NULL;
   newGroup->nextGroup = NULL;
   newGroup->collapsed = false;
   return newGroup;
@@ -112,13 +129,14 @@ void addGroup(TodoPage** page, char* _name) {
   TodoGroup* newGroup = createTodoGroup(_name);
   if((*page)->groupHead == NULL) {
     (*page)->groupHead = newGroup;
+    (*page)->groupTail = newGroup;
     return;
   }
 
-  TodoGroup* temp = (*page)->groupHead;
-  while(temp->nextGroup != NULL) {
-    temp = temp->nextGroup;
-  } temp->nextGroup = newGroup;
+  if((*page)->groupTail != NULL) {
+    (*page)->groupTail->nextGroup = newGroup;
+    (*page)->groupTail = (*page)->groupTail->nextGroup;
+  }
 }
 
 void deleteTodoGroup(TodoGroup *groupDel, TodoPage **page) {
@@ -175,6 +193,7 @@ TodoPage* createPage(char* _name) {
   newPage->name = _name;
   newPage->nextPage = NULL;
   newPage->groupHead = NULL;
+  newPage->groupTail = NULL;
   return newPage;
 }
 
@@ -193,7 +212,16 @@ void addPage(TodoPage** head, char* _name) {
   }
 }
 
-void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* page, TodoGroup** selectedGroup, TodoItem** selectedItem, int* _highlight, todoMode mode, int* _a) {
+void printStrikethrough(WINDOW *window, int y, int x, char* str) {
+  char *c_str = str;
+  for(int i = 0; c_str[i] != '\0'; i++) {
+    mvwprintw(window, y, x + i, "%c\u0336", c_str[i]); 
+  }
+}
+
+// *REFACTOR
+// BEFORE 131 LINES
+void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* page, TodoGroup** selectedGroup, TodoItem** selectedItem, int* _highlight, todoMode mode, int* _a, int *sX, int *sY, int xOffset) {
   int printY = 0;
   int a = *_a;
   a = 0;
@@ -201,48 +229,50 @@ void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* p
   int maxY, maxX;
   getmaxyx(mainWindow, maxY, maxX);
 
+  char collapsedChar = 'V';
+
+  attr_t currentAttribute;
+
+  attr_t a_groupHighlight = A_BOLD | A_STANDOUT;
+  attr_t a_groupHighlightUnfocus = A_BOLD | A_UNDERLINE;
+  attr_t a_bold = A_BOLD;
+
+  attr_t a_normal = A_NORMAL;
+  attr_t a_tickedBox = A_STANDOUT | COLOR_PAIR(2);
+
+  char *tickBox = "[ ]";
+
   TodoGroup* currentGroup = NULL;
     if(page != NULL){ currentGroup = page->groupHead; }
     while(currentGroup != NULL) {
       init_pair(2, COLOR_GREEN, -1);
-
       if(printY == highlight) {
         if(mode == TODO) {
-          wattron(mainWindow, A_BOLD);
-          wattron(mainWindow, A_STANDOUT);
-          if(currentGroup->collapsed == false) {
-            mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name); 
-          } else {
-            mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
-          }
-          wattroff(mainWindow, A_BOLD);
-          wattroff(mainWindow, A_STANDOUT);
+          currentAttribute = a_groupHighlight;  
+
           *selectedGroup = currentGroup;
           *selectedItem = NULL;
           // Calculate move_panel shit 
           move_panel(_panel3, printY + 1, strlen(currentGroup->name) + 5);
         }
-        else {
-          wattron(mainWindow, A_BOLD);
-          wattron(mainWindow, A_UNDERLINE);
-          if(currentGroup->collapsed == false) {
-            mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name);
-          } else {
-            mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
-          }
-          wattroff(mainWindow, A_BOLD);
-          wattroff(mainWindow, A_UNDERLINE);
+        else { 
+          currentAttribute = a_groupHighlightUnfocus; 
         }
+        *sX = strlen(currentGroup->name) + 20;
+        *sY = 1 + printY; 
       }
-      else {
-        wattron(mainWindow, A_BOLD);
-        if(currentGroup->collapsed == false) {
-          mvwprintw(mainWindow, 1 + printY, 1, "V %s", currentGroup->name);
-        } else {
-          mvwprintw(mainWindow, 1 + printY, 1, "> %s", currentGroup->name);
-        }
-        wattroff(mainWindow, A_BOLD); 
+      else { 
+        currentAttribute = a_bold; 
       } 
+
+      wattron(mainWindow, currentAttribute);
+
+      if(currentGroup->collapsed == false) { collapsedChar = 'V'; }
+      else { collapsedChar = '>'; }
+      mvwprintw(mainWindow, 1 + printY, 1, "%c %s", collapsedChar,currentGroup->name);
+
+      wattroff(mainWindow, currentAttribute);
+
       printY++;
       a++;
      
@@ -251,62 +281,53 @@ void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* p
         tempItem = currentGroup->todoHead; 
 
         while(tempItem != NULL) {
-          if (printY == highlight && tempItem->completed == false) {
-            if(mode != TODO) {
-              wattron(mainWindow, A_UNDERLINE);
-              mvwprintw(mainWindow, 1 + printY, 1, "  [ ] %s", tempItem->name);
-              wattroff(mainWindow, A_UNDERLINE);
+          if (printY == highlight) { // If selected
+            if(mode != TODO && !tempItem->completed) {              
+              tickBox = "[ ]";
+              currentAttribute = A_UNDERLINE;
+            }
+            else if(tempItem->completed) {
+              tickBox = "[X]";
+              currentAttribute = a_tickedBox;
             }
             else {
-              wattron(mainWindow, A_STANDOUT);
-              mvwprintw(mainWindow, 1 + printY, 1, "  [ ] %s", tempItem->name);
-              wattroff(mainWindow, A_STANDOUT);
+              tickBox = "[ ]";
+              currentAttribute = A_STANDOUT;
             }
-            *selectedItem = tempItem;
-            *selectedGroup = currentGroup;
-            //Calculate move_panel shit
-            int bX = strlen(tempItem->name) + 6;
-            int bY = printY;
-            if(bY > 3) { bY -= 3; } // CEILING
-            else if(printY >= maxY - 7) { bY -= (printY - maxY); } // FLOOR
-            move_panel(_panel2, bY, bX);
-            move_panel(_panel3, bY, bX);
-          }
-          else if(printY == highlight && tempItem->completed) {
-            wattron(mainWindow, A_STANDOUT);
-            wattron(mainWindow, COLOR_PAIR(2));
-            mvwprintw(mainWindow, 1 + printY, 1, "  [X] ");
-            char *c_str = tempItem->name;
-            for(int i = 0; c_str[i] != '\0'; i++) {
-              mvwprintw(mainWindow, 1 + printY, i + 7, "%c\u0336", c_str[i]); 
-            }
-            wattroff(mainWindow, A_STANDOUT);
-            wattroff(mainWindow, COLOR_PAIR(2));
-            //mvwprintw(mainWindow, 25, 2,"DEBUG: Did it run?");
 
             *selectedItem = tempItem;
             *selectedGroup = currentGroup;
-            int bX = strlen(tempItem->name) + 6;
+            //Calculate move_panel shit
+            int bX = strlen(tempItem->name) + 8;
             int bY = printY;
             if(bY > 3) { bY -= 3; } // CEILING
             else if(printY >= maxY - 7) { bY -= (printY - maxY); } // FLOOR
-            move_panel(_panel2, bY, bX);
+            move_panel(_panel2, bY, bX + xOffset);
+            move_panel(_panel3, bY, bX + xOffset);
+            *sX = strlen(tempItem->name) + 20;
+            *sY = 1 + printY;
           }
           else {
-            if(tempItem->completed == true) {
-              wattron(mainWindow, COLOR_PAIR(2));
-              mvwprintw(mainWindow, 1 + printY, 1, "  [X]"); 
-              char *c_str = tempItem->name;
-              for(int i = 0; c_str[i] != '\0'; i++) {
-                mvwprintw(mainWindow, 1 + printY, i + 7, "%c\u0336", c_str[i]); 
-              }
-              wattroff(mainWindow, COLOR_PAIR(2));
-              //mvwprintw(mainWindow, 25, 2,"DEBUG: Did it run?[eee]");
+            if(tempItem->completed == true) {              
+              tickBox = "[X]";
+              currentAttribute = COLOR_PAIR(2);
             }
-            else {
-              mvwprintw(mainWindow, 1 + printY, 1, "  [ ] %s", tempItem->name);
+            else { 
+              tickBox = "[ ]";
+              currentAttribute = A_NORMAL;
             }
           }
+          
+          wattron(mainWindow, currentAttribute);
+          if(!tempItem->completed) {
+            mvwprintw(mainWindow, 1 + printY, 1, "  %s %s", tickBox, tempItem->name);
+          } 
+          else {
+            mvwprintw(mainWindow, 1 + printY, 1, "  %s ", tickBox);
+            printStrikethrough(mainWindow, 1 + printY, 7, tempItem->name);
+          }
+          wattroff(mainWindow, currentAttribute);
+
           printY++;
           a++;
           tempItem = tempItem->next;
@@ -316,6 +337,11 @@ void displayPage(WINDOW* mainWindow, PANEL* _panel2, PANEL* _panel3, TodoPage* p
     }
 
   *_a = a;
+}
+
+void pageSelect(TodoPage *headPage, TodoPage **activePage) {
+  // Display Page List 
+
 }
 
 void initPopup(WINDOW *mainWindow, WINDOW *subWin, PANEL *panel, int h, int w) {
@@ -369,11 +395,14 @@ char* textBox(WINDOW *_mainWindow, WINDOW **_subWin, PANEL **_panel, int boxLeng
   WINDOW *win = *_subWin;
 
   bool textBoxOn = true;
+  bool e = true;
   int curX = 1;
   int input;
   int length = strlen(buffer);
-
+  
+  wattron(win, A_BOLD);
   mvwprintw(win, 0, 1, title);
+  wattroff(win, A_BOLD);
   wmove(win, 1, curX);
 
   while(true) {
@@ -382,6 +411,10 @@ char* textBox(WINDOW *_mainWindow, WINDOW **_subWin, PANEL **_panel, int boxLeng
     mvwprintw(win, 1, 1, buffer);
 
     if((input == 10 || input == KEY_ENTER) && strlen(buffer) > 0) {
+      break;
+    }
+    else if(input == 27) {
+      e = false;
       break;
     }
 
@@ -399,7 +432,9 @@ char* textBox(WINDOW *_mainWindow, WINDOW **_subWin, PANEL **_panel, int boxLeng
     werase(win);
     box(win, 0, 0);
     mvwprintw(win, 1, 1, "%-*s", boxLength - 2, buffer);
+    wattron(win, A_BOLD);
     mvwprintw(win, 0, 1, title);
+    wattroff(win, A_BOLD);
     wmove(win, 1, curX);
     
     update_panels();
@@ -408,7 +443,8 @@ char* textBox(WINDOW *_mainWindow, WINDOW **_subWin, PANEL **_panel, int boxLeng
   
   curs_set(false);
   endTempPopup(_mainWindow, _subWin, _panel);
-  return buffer;
+  if(e) { return buffer; }
+  else { return "\0"; }
 }
 
 void readTodoList(TodoPage** head) {
@@ -563,7 +599,12 @@ void TodoApp() {
   int maxX, maxY;
   getmaxyx(stdscr, maxY, maxX); 
   int aCurX = 2;
-  WINDOW *mainWindow = newwin(maxY, maxX, 0, 0);
+  int scrWidth = 100;
+  if((maxX/3) > scrWidth) { scrWidth = maxX/3; }
+  else if((scrWidth > maxX)) { scrWidth = maxX; }
+  int xOffset = (maxX / 2 - scrWidth/2);
+
+  WINDOW *mainWindow = newwin(maxY, scrWidth, 0, xOffset);
   WINDOW *glSubWin; // use for initTempPopup() and endTempPopup() 
   WINDOW *subWin1 = newwin(1, 1, 1, 1);
   WINDOW *subWin2 = newwin(1, 1, 1, 1);
@@ -575,36 +616,29 @@ void TodoApp() {
   PANEL *panel2 = new_panel(subWin2); // interact with todo menu 
   PANEL *panel3 = new_panel(subWin3); // are you sure you want to delete group/item?
 
-  todoMode mode = TODO; // 0 - MenuMode : 1 - TodoList Mode
-  
-  //TodoPage page1 = {"PAGE 1", NULL, NULL};
+  todoMode mode = TODO; 
 
   TodoPage* selectedPage = NULL; 
   TodoPage* headPage = NULL;
 
   TodoGroup* selectedGroup = NULL;
   TodoItem* selectedItem = NULL;
-  readTodoList(&headPage);
-
-  // addPage("COCK", &headPage);
-
-  if(headPage != NULL) {
-    selectedPage = headPage;
-  }
-  else {
-
-  }
 
   int highlight = 0;
   int input = 0;
   int a = 0;
+  int sX, sY;
   char addBuffer[256];
+
+  readTodoList(&headPage);
+
+  if(headPage != NULL) {
+    selectedPage = headPage;
+  }
 
   keypad(mainWindow, true);
   top_panel(panel0);
   doupdate();
-
-
 
   // MAIN TODO LOOP
   while(running) {
@@ -614,7 +648,7 @@ void TodoApp() {
 
     if(selectedPage != NULL) {
       char* titleDisplay = selectedPage->name;
-      mvwprintw(mainWindow, 0, maxX/2 - strlen(titleDisplay)/2, "%s", titleDisplay);
+      mvwprintw(mainWindow, 0, scrWidth/2 - strlen(titleDisplay)/2, "%s", titleDisplay);
     }
     else {
       // initTempPopup(mainWindow, &glSubWin, &glPanel, 5, 40, (maxY / 2) - 5, (maxX / 2) - 20);
@@ -624,10 +658,8 @@ void TodoApp() {
   
       char *textBoxMessage = "Create Todo Page:";
       int textBoxMessageLength = strlen(textBoxMessage);
-      //mvwprintw(mainWindow, 1, 1, "NIGGERS!");
       char* pageName = textBox(mainWindow, &glSubWin, &glPanel, 60, maxY/2 + 2, maxX/2 - 30, textBoxMessage);
-      // mvwprintw(mainWindow, 1, 1, "NIGGERS!");
-      if(pageName && strlen(pageName) > 0) {
+      if(pageName && (strlen(pageName) > 0 && *pageName != '\0')) {
         addPage(&headPage, pageName);
         selectedPage = headPage;
       }
@@ -636,7 +668,7 @@ void TodoApp() {
     }
     
     // RENDER TODOLIST (page) 
-    displayPage(mainWindow, panel2, panel3, selectedPage, &selectedGroup, &selectedItem, &highlight, mode, &a);
+    displayPage(mainWindow, panel2, panel3, selectedPage, &selectedGroup, &selectedItem, &highlight, mode, &a, &sX, &sY, xOffset);
     
     update_panels();
     doupdate(); 
@@ -673,11 +705,13 @@ void TodoApp() {
             top_panel(panel2);
             wresize(subWin2, 7, 25);
             werase(subWin2);
+            wattron(subWin2, A_BOLD);
             mvwprintw(subWin2, 1, 1, "[1] Mark/Unmark as Done");
             mvwprintw(subWin2, 2, 1, "[2] Rename");
             mvwprintw(subWin2, 3, 1, "[3] Add Comment");
             mvwprintw(subWin2, 4, 1, "[4] Move");
             mvwprintw(subWin2, 5, 1, "[5] Delete");
+            wattron(subWin2, A_BOLD);
             box(subWin2, 0, 0);
             
             int select_input = wgetch(subWin2);
@@ -698,6 +732,7 @@ void TodoApp() {
             }
 
             bottom_panel(panel2);
+            hide_panel(panel2);
             keypad(subWin2, FALSE);
             keypad(mainWindow, TRUE);
           }
@@ -720,12 +755,13 @@ void TodoApp() {
             }
 
             endPopup(mainWindow, subWin3, panel3);
+            hide_panel(panel3);
           }
           break;
         case 's':
         case 'S':
           writeTodoList(selectedPage);
-          initTempPopup(mainWindow, &glSubWin, &glPanel, 3, 40, 1, maxX - 41);
+          initTempPopup(mainWindow, &glSubWin, &glPanel, 3, 40, 1, maxX/2 + scrWidth/2 - 41);
           mvwprintw(glSubWin, 1, 1, "✔ Data Saved...");
           wgetch(glSubWin);
           endTempPopup(mainWindow, &glSubWin, &glPanel);
@@ -733,16 +769,41 @@ void TodoApp() {
         case 'm':
         case 'M':
           if(selectedItem != NULL) { selectedItem->completed = !selectedItem->completed; }
+          break;
         case 'r':
         case 'R':
-          break;
+          int x = (scrWidth - 2 - sX);
+          if(selectedItem != NULL) {
+            int len = strlen(selectedItem->name);
+            char* todoName = (char*)malloc(len + 1);
+            strcpy(todoName, selectedItem->name);
+            todoName[len] = '\0';
+            char renameStr[128];
+            snprintf(renameStr, sizeof(renameStr), "RENAME: \"%s\"", todoName);
+            char* newStr = textBox(mainWindow, &glSubWin, &glPanel, x, sY - 1, sX + xOffset, renameStr);
+            if(*newStr != '\0') { selectedItem->name = newStr; }
+            free(todoName);
+            break;
+          }
+          else {
+            int len = strlen(selectedGroup->name);
+            char* groupName = (char*)malloc(len + 1);
+            strcpy(groupName, selectedGroup->name);
+            groupName[len] = '\0';
+            char renameStr[128];
+            snprintf(renameStr, sizeof(renameStr), "RENAME: \"%s\"", groupName);
+            char* newStr = textBox(mainWindow, &glSubWin, &glPanel, x, sY - 1, sX + xOffset, renameStr);
+            if(*newStr != '\0') { selectedGroup->name = newStr; }
+            free(groupName);
+            break;
+          }
       }
     }
     else if(mode == ADD) {
       aCurX = 0;
       keypad(mainWindow, FALSE);
       keypad(subWin1, TRUE);
-      move_panel(panel1, maxY - 5, 1);
+      move_panel(panel1, maxY - 5, xOffset + 1);
       top_panel(panel1);
       werase(subWin1);
       wresize(subWin1, 4, 20);
@@ -794,8 +855,8 @@ void TodoApp() {
             wmove(subWin1, 1, 2);
             mvwprintw(subWin1, 0, 2, "Add %s", adding);
             mvwprintw(subWin1, 1, 1, ":");
-            move_panel(panel1, maxY - 4, 1);
-            wresize(subWin1, 3, maxX - 2); 
+            move_panel(panel1, maxY - 4, xOffset + 1);
+            wresize(subWin1, 3, scrWidth - 2); 
           }
           werase(subWin1);
           box(subWin1, 0, 0);
@@ -850,6 +911,8 @@ void TodoApp() {
       }
       exitAdd:
       werase(subWin1);
+      bottom_panel(panel1);
+      hide_panel(panel1);
       curs_set(false);
       keypad(subWin1, FALSE);
       keypad(mainWindow, TRUE);
@@ -923,6 +986,8 @@ void MainMenu() {
       case KEY_ENTER:
         choice = highlight;
         running = false;
+        werase(window);
+        wrefresh(window);
         appList[choice].run();
         break;
     }
